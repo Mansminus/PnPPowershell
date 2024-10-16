@@ -121,7 +121,7 @@ namespace PnP.PowerShell.Commands.Provisioning.Site
             return retFolders;
         }
 
-        private PnP.Framework.Provisioning.Model.Folder GetFolder(Microsoft.SharePoint.Client.Folder listFolder)
+        private PnP.Framework.Provisioning.Model.Folder GetFolder(Microsoft.SharePoint.Client.Folder listFolder, bool isDeepestFolder = true)
         {
             ListItem folderItem = listFolder.ListItemAllFields;
             ClientContext.Load(folderItem, fI => fI.HasUniqueRoleAssignments);
@@ -133,21 +133,27 @@ namespace PnP.PowerShell.Commands.Provisioning.Site
                 Name = listFolder.Name
             };
 
+            // Recurse into child folders if Recursive is set
             if (Recursive)
             {
+                bool hasChildren = listFolder.Folders.Any();
                 foreach (var folder in listFolder.Folders)
                 {
-                    var childFolder = GetFolder(folder);
+                    // If current folder has children, it's not the deepest folder
+                    var childFolder = GetFolder(folder, isDeepestFolder: !hasChildren);
                     retFolder.Folders.Add(childFolder);
                 }
             }
+
+            // Include security only if IncludeSecurity is true and folder has unique role assignments
             if (IncludeSecurity && folderItem.ServerObjectIsNull != null && !folderItem.ServerObjectIsNull.Value && folderItem.HasUniqueRoleAssignments)
             {
                 var RoleAssignments = folderItem.RoleAssignments;
                 ClientContext.Load(RoleAssignments);
                 ClientContext.ExecuteQueryRetry();
 
-                retFolder.Security.ClearSubscopes = true;
+                // Set ClearSubscopes based on whether it's the deepest folder
+                retFolder.Security.ClearSubscopes = isDeepestFolder;
                 retFolder.Security.CopyRoleAssignments = false;
 
                 ClientContext.Load(RoleAssignments, r => r.Include(a => a.Member.LoginName, a => a.Member, a => a.RoleDefinitionBindings));
@@ -163,15 +169,16 @@ namespace PnP.PowerShell.Commands.Provisioning.Site
                         {
                             continue;
                         }
-                        retFolder.Security.RoleAssignments.Add(new PnP.Framework.Provisioning.Model.RoleAssignment() { Principal = principalName, RoleDefinition = roleBinding.Name });
+                        retFolder.Security.RoleAssignments.Add(new PnP.Framework.Provisioning.Model.RoleAssignment()
+                        {
+                            Principal = principalName,
+                            RoleDefinition = roleBinding.Name
+                        });
                     }
                 }
             }
 
             return retFolder;
         }
-
-
-
     }
 }
